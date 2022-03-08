@@ -1,0 +1,14 @@
+synopsis: Display capture hints in router layout
+prs: #1556
+
+description: {
+
+This PR introduces a CaptureHint type, which is passed as an extra argument to the CaptureRouter and CaptureAllRouter constructors for the Router' type.
+CaptureHint values are then used in routerLayout, to display the name and type of captured values, instead of just <capture> previously.
+
+N.B.:
+Because the choice smart constructor for routers can aggregate Capture combinators with different capture hints, the Capture*Router constructors actually take a list of CaptureHint, instead of a single one.
+
+This PR also introduces Spec tests for the routerLayout function.
+
+}
