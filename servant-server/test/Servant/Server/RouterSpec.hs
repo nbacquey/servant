@@ -10,6 +10,8 @@ import           Data.Proxy
                  (Proxy (..))
 import           Data.Text
                  (unpack)
+import           Data.Typeable
+                 (typeRep)
 import           Network.HTTP.Types
                  (Status (..))
 import           Network.Wai
@@ -51,13 +53,16 @@ routerSpec = do
         toApp = toApplication . runRouter (const err404)
 
         cap :: Router ()
-        cap = CaptureRouter $
+        cap = CaptureRouter [hint] $
           let delayed = addCapture (emptyDelayed $ Route pure) (const $ delayedFail err400)
           in leafRouter
              $ \env req res ->
                  runAction delayed env req res
                  . const
                  $ Route success
+
+        hint :: CaptureHint
+        hint = CaptureHint "anything" $ typeRep (Proxy :: Proxy ())
 
         router :: Router ()
         router = leafRouter (\_ _ res -> res $ Route success)

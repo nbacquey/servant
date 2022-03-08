@@ -235,7 +235,7 @@ hoistServer p = hoistServerWithContext p (Proxy :: Proxy '[])
 -- > │  └─ e/
 -- > │     └─•
 -- > ├─ b/
--- > │  └─ <capture>/
+-- > │  └─ <capture x::Int>/
 -- > │     ├─•
 -- > │     ┆
 -- > │     └─•
@@ -252,7 +252,8 @@ hoistServer p = hoistServerWithContext p (Proxy :: Proxy '[])
 --
 -- [@─•@] Leaves reflect endpoints.
 --
--- [@\<capture\>/@] This is a delayed capture of a path component.
+-- [@\<capture x::Int\>/@] This is a delayed capture of a path component
+-- named @x@ with type @Int@.
 --
 -- [@\<raw\>@] This is a part of the API we do not know anything about.
 --
