@@ -2,6 +2,8 @@
 {-# LANGUAGE DeriveFunctor     #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TupleSections     #-}
 module Servant.Server.Internal.Router where
 
 import           Prelude ()
@@ -28,11 +30,42 @@ import           Servant.Server.Internal.ServerError
 
 type Router env = Router' env RoutingApplication
 
+data RichEnv env = RichEnv
+  { routedPath :: [PathPiece]
+  , routerEnv :: env
+  }
+  deriving Functor
+
+emptyEnv :: a -> RichEnv a
+emptyEnv v = RichEnv [] v
+
+appendPiece :: PathPiece -> RichEnv a -> RichEnv a
+appendPiece p RichEnv{..} = RichEnv
+  { routedPath = routedPath ++ [p]
+  , ..
+  }
+
 data CaptureHint = CaptureHint
   { captureName   :: Text
   , capturedType  :: TypeRep
   }
   deriving (Show, Eq)
+
+toCaptureTag :: CaptureHint -> Text
+toCaptureTag hint = captureName hint <> "::" <> (T.pack . show) (capturedType hint)
+
+toCaptureTags :: [CaptureHint] -> Text
+toCaptureTags hints = "<" <> T.intercalate "|" (map toCaptureTag hints) <> ">"
+
+routedPathRepr :: RichEnv env -> Text
+routedPathRepr RichEnv{routedPath = path} = "/" <> T.intercalate "/" (map go path)
+  where
+    go (StaticPiece p) = p
+    go (CapturePiece p) = toCaptureTags p
+
+data PathPiece
+  = StaticPiece Text
+  | CapturePiece [CaptureHint]
 
 -- | Internal representation of a router.
 --
@@ -42,7 +75,7 @@ data CaptureHint = CaptureHint
 -- components that can be used to process captures.
 --
 data Router' env a =
-    StaticRouter  (Map Text (Router' env a)) [env -> a]
+    StaticRouter  (Map Text (Router' env a)) [RichEnv env -> a]
       -- ^ the map contains routers for subpaths (first path component used
       --   for lookup and removed afterwards), the list contains handlers
       --   for the empty path, to be tried in order
@@ -52,7 +85,7 @@ data Router' env a =
   | CaptureAllRouter [CaptureHint] (Router' ([Text], env) a)
       -- ^ all path components are passed to the child router in its
       --   environment and are removed afterwards
-  | RawRouter     (env -> a)
+  | RawRouter     (RichEnv env -> a)
       -- ^ to be used for routes we do not know anything about
   | Choice        (Router' env a) (Router' env a)
       -- ^ left-biased choice between two routers
@@ -65,7 +98,7 @@ pathRouter t r = StaticRouter (M.singleton t r) []
 -- | Smart constructor for a leaf, i.e., a router that expects
 -- the empty path.
 --
-leafRouter :: (env -> a) -> Router' env a
+leafRouter :: (RichEnv env -> a) -> Router' env a
 leafRouter l = StaticRouter M.empty [l]
 
 -- | Smart constructor for the choice between routers.
@@ -170,21 +203,15 @@ routerLayout router =
     mkSubTree True  path children = ("├─ " <> path <> "/") : map ("│  " <>) children
     mkSubTree False path children = ("└─ " <> path <> "/") : map ("   " <>) children
 
-    toCaptureTag :: CaptureHint -> Text
-    toCaptureTag hint = captureName hint <> "::" <> (T.pack . show) (capturedType hint)
-
-    toCaptureTags :: [CaptureHint] -> Text
-    toCaptureTags hints = "<capture " <> T.intercalate "|" (map toCaptureTag hints) <> ">"
-
 -- | Apply a transformation to the response of a `Router`.
 tweakResponse :: (RouteResult Response -> RouteResult Response) -> Router env -> Router env
 tweakResponse f = fmap (\a -> \req cont -> a req (cont . f))
 
 -- | Interpret a router as an application.
 runRouter :: NotFoundErrorFormatter -> Router () -> RoutingApplication
-runRouter fmt r = runRouterEnv fmt r ()
+runRouter fmt r = runRouterEnv fmt r $ emptyEnv ()
 
-runRouterEnv :: NotFoundErrorFormatter -> Router env -> env -> RoutingApplication
+runRouterEnv :: NotFoundErrorFormatter -> Router env -> RichEnv env -> RoutingApplication
 runRouterEnv fmt router env request respond  =
   case router of
     StaticRouter table ls ->
@@ -194,20 +221,25 @@ runRouterEnv fmt router env request respond  =
         [""] -> runChoice fmt ls env request respond
         first : rest | Just router' <- M.lookup first table
           -> let request' = request { pathInfo = rest }
-             in  runRouterEnv fmt router' env request' respond
+                 newEnv = appendPiece (StaticPiece first) env
+             in  runRouterEnv fmt router' newEnv request' respond
         _ -> respond $ Fail $ fmt request
-    CaptureRouter _ router' ->
+    CaptureRouter hints router' ->
       case pathInfo request of
         []   -> respond $ Fail $ fmt request
         -- This case is to handle trailing slashes.
         [""] -> respond $ Fail $ fmt request
         first : rest
           -> let request' = request { pathInfo = rest }
-             in  runRouterEnv fmt router' (first, env) request' respond
-    CaptureAllRouter _ router' ->
+                 newEnv = appendPiece (CapturePiece hints) env
+                 newEnv' = ((first,) <$> newEnv)
+             in  runRouterEnv fmt router' newEnv' request' respond
+    CaptureAllRouter hints router' ->
       let segments = pathInfo request
           request' = request { pathInfo = [] }
-      in runRouterEnv fmt router' (segments, env) request' respond
+          newEnv = appendPiece (CapturePiece hints) env
+          newEnv' = ((segments,) <$> newEnv)
+      in runRouterEnv fmt router' newEnv' request' respond
     RawRouter app ->
       app env request respond
     Choice r1 r2 ->

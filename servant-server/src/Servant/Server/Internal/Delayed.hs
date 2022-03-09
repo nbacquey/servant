@@ -19,6 +19,8 @@ import           Network.Wai
 
 import           Servant.Server.Internal.DelayedIO
 import           Servant.Server.Internal.Handler
+import           Servant.Server.Internal.Router
+                 (RichEnv (..))
 import           Servant.Server.Internal.RouteResult
 import           Servant.Server.Internal.ServerError
 
@@ -228,12 +230,12 @@ passToServer Delayed{..} x =
 -- This should only be called once per request; otherwise the guarantees about
 -- effect and HTTP error ordering break down.
 runDelayed :: Delayed env a
-           -> env
+           -> RichEnv env
            -> Request
            -> ResourceT IO (RouteResult a)
 runDelayed Delayed{..} env = runDelayedIO $ do
     r <- ask
-    c <- capturesD env
+    c <- capturesD $ routerEnv env
     methodD
     a <- authD
     acceptD
@@ -248,7 +250,7 @@ runDelayed Delayed{..} env = runDelayedIO $ do
 -- Also takes a continuation for how to turn the
 -- result of the delayed server into a response.
 runAction :: Delayed env (Handler a)
-          -> env
+          -> RichEnv env
           -> Request
           -> (RouteResult Response -> IO r)
           -> (a -> RouteResult Response)
