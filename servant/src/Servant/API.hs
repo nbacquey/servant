@@ -122,7 +122,7 @@ import           Servant.API.Raw
 import           Servant.API.RemoteHost
                  (RemoteHost)
 import           Servant.API.RedirectOf
-                 (RedirectOf(..))
+                 (RedirectOf'(..), RedirectOf, RedirectLeniency(..))
 import           Servant.API.ReqBody
                  (ReqBody, ReqBody')
 import           Servant.API.ResponseHeaders

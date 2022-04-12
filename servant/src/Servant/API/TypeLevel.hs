@@ -11,6 +11,7 @@
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE UndecidableInstances     #-}
 {-# LANGUAGE UndecidableSuperClasses  #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 {-|
 This module collects utilities for manipulating @servant@ API types. The
@@ -47,7 +48,9 @@ module Servant.API.TypeLevel (
     And,
     -- ** Fragment
     FragmentUnique,
-    AtLeastOneFragment
+    AtLeastOneFragment,
+    -- ** Verb inclusion
+    HasVerb
     ) where
 
 
@@ -66,8 +69,10 @@ import           Servant.API.ReqBody
                  (ReqBody)
 import           Servant.API.Sub
                  (type (:>))
+import           Servant.API.Stream
+                 (Stream)
 import           Servant.API.Verbs
-                 (Verb)
+                 (StdMethod, Verb)
 import           Servant.API.UVerb
                  (UVerb)
 import           GHC.TypeLits
@@ -290,6 +295,24 @@ type NotUniqueFragmentInApi api =
     ':<>: 'ShowType api
     ':<>: 'Text "’."
 
+-- | Check whether @api@ can serve HTTP verb @v@.
+-- Particularly meaningful for endpoints (i.e. api without disjunctions)
+--
+-- >>> ok (Proxy :: Proxy (HasVerb 'GET SampleAPI))
+-- OK
+--
+-- >>> ok (Proxy :: Proxy (HasVerb 'DELETE SampleAPI))
+-- ...
+-- ... Could not deduce...
+-- ...
+type HasVerb :: StdMethod -> * -> Constraint
+type family HasVerb v api where
+  HasVerb v (x :> sa)             = HasVerb v sa
+  HasVerb v (sa :<|> sb)          = Or (HasVerb v sa) (HasVerb v sb)
+  HasVerb v (Verb v s ct typ)     = ()
+  HasVerb v (UVerb v ct as)       = ()
+  HasVerb v (Stream v s f ct typ) = ()
+
 -- $setup
 --
 -- The doctests in this module are run with following preamble:
@@ -300,6 +323,7 @@ type NotUniqueFragmentInApi api =
 -- >>> import Data.Proxy
 -- >>> import Data.Type.Equality
 -- >>> import Servant.API
+-- >>> import Servant.API.Verbs (GET, DELETE)
 -- >>> data OK ctx where OK :: ctx => OK ctx
 -- >>> instance Show (OK ctx) where show _ = "OK"
 -- >>> let ok :: ctx => Proxy ctx -> OK ctx; ok _ = OK
