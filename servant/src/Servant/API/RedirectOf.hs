@@ -1,15 +1,18 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE AllowAmbiguousTypes      #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE PolyKinds                #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE UndecidableInstances     #-}
 
 module Servant.API.RedirectOf where
 
+import           Data.Proxy
+                 (Proxy (..))
 import           GHC.Exts
                  (Constraint)
 import           GHC.TypeLits
@@ -44,11 +47,23 @@ data RedirectOf' (leniency :: RedirectLeniency) (status :: Nat) (method :: StdMe
     ( IsElem endpoint api
     , HasLink endpoint
     , HandlesCorrectMethods leniency status method endpoint api
-    ) => (forall a. MkLink endpoint a -> a)
+    ) => Proxy endpoint
+      -> (forall a. MkLink endpoint a -> a)
       -> RedirectOf' leniency status method api
 
 -- | Type alias using RedirectStrict by default
 type RedirectOf = RedirectOf' 'RedirectStrict
+
+-- | Helper to get rid of the @Proxy endpoint@ boilerplate
+redirectOf :: forall endpoint leniency status method api.
+  ( IsElem endpoint api
+  , HasLink endpoint
+  , HandlesCorrectMethods leniency status method endpoint api
+  ) => (forall a. MkLink endpoint a -> a)
+    -> RedirectOf' leniency status method api
+redirectOf (mkLink :: forall a. MkLink endpoint a -> a) =
+  RedirectOf (Proxy :: Proxy endpoint) mkLink
+
 -- Below is an extract from https://developer.mozilla.org/en-US/docs/Web/HTTP/Redirections
 -- from which we define the logic for HTTP methods handling.
 {--

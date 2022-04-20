@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE InstanceSigs          #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -76,8 +77,12 @@ import           Servant.API
                  QueryParam', QueryParams, Raw, ReflectMethod (reflectMethod),
                  RemoteHost, ReqBody', SBool (..), SBoolI (..), SourceIO,
                  Stream, StreamBody', Summary, ToSourceIO (..), Vault, Verb,
-                 WithNamedContext, NamedRoutes)
-import           Servant.API.Generic (GenericMode(..), ToServant, ToServantApi, GServantProduct, toServant, fromServant)
+                 WithNamedContext, NamedRoutes, RedirectOf' (..), MkLink, Link)
+import           Servant.API.Generic
+                 (GenericMode(..), ToServant, ToServantApi, GServantProduct,
+                 toServant, fromServant)
+import           Servant.Links
+                 (linkURI, safeLink)
 import           Servant.API.ContentTypes
                  (AcceptHeader (..), AllCTRender (..), AllCTUnrender (..),
                  AllMime, MimeRender (..), MimeUnrender (..), NoContent,
@@ -92,8 +97,8 @@ import           Servant.API.Status
 import qualified Servant.Types.SourceT                      as S
 import           Servant.API.TypeErrors
 import           Web.HttpApiData
-                 (FromHttpApiData, parseHeader, parseQueryParam, parseUrlPiece,
-                 parseUrlPieces)
+                 (FromHttpApiData, ToHttpApiData (..), parseHeader, parseQueryParam,
+                 parseUrlPiece, parseUrlPieces)
 
 import           Servant.Server.Internal.BasicAuth
 import           Servant.Server.Internal.Context
@@ -815,6 +820,35 @@ instance (HasContextEntry context (NamedContext name subContext), HasServer subA
       subContext = descendIntoNamedContext (Proxy :: Proxy name) context
 
   hoistServerWithContext _ _ nt s = hoistServerWithContext (Proxy :: Proxy subApi) (Proxy :: Proxy subContext) nt s
+
+-- * Redirections
+
+instance ( ReflectMethod method
+         , KnownNat status
+         ) =>
+         HasServer (RedirectOf' leniency status method api) context where
+
+  type ServerT (RedirectOf' leniency status method api) m =
+    m (RedirectOf' leniency status method api)
+  
+  hoistServerWithContext _ _ nt s = nt s
+
+  route _ _ action = RawRouter $ \env request mkResponse -> do
+      let action' = action `addMethodCheck` methodCheck method request
+      runResourceT (runDelayed action' env request) >>= \case
+        Fail err              -> mkResponse $ Fail err
+        FailFatal err         -> mkResponse $ FailFatal err
+        (Route handlerAction) -> do
+          (Right (RedirectOf
+            (endpoint :: Proxy endpoint)
+            (mkLink :: forall a. MkLink endpoint a -> a)
+            )) <- runHandler handlerAction
+          let (link :: Link) = mkLink (safeLink (Proxy @api) endpoint)
+              result = Route $ responseLBS status [("Location", toHeader link)] ""
+          mkResponse result
+    where
+      method = reflectMethod (Proxy @method)
+      status = statusFromNat (Proxy @status)
 
 -------------------------------------------------------------------------------
 -- Custom type errors
