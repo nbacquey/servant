@@ -16,6 +16,28 @@
 
 ```
 
+## GET /:bar
+
+### Captures:
+
+- *bar*: example description
+
+### Response:
+
+- Status code 200
+- Headers: []
+
+- Supported content types are:
+
+    - `application/json;charset=utf-8`
+    - `application/json`
+
+- Example (`application/json;charset=utf-8`, `application/json`):
+
+```javascript
+
+```
+
 ## GET /alternative/left
 
 ### Response:
@@ -35,28 +57,6 @@
 ```
 
 ## GET /alternative/right
-
-### Response:
-
-- Status code 200
-- Headers: []
-
-- Supported content types are:
-
-    - `application/json;charset=utf-8`
-    - `application/json`
-
-- Example (`application/json;charset=utf-8`, `application/json`):
-
-```javascript
-
-```
-
-## GET /capture/:bar
-
-### Captures:
-
-- *bar*: example description
 
 ### Response:
 
@@ -429,6 +429,19 @@
 
 - Status code 200
 - Headers: []
+
+- No response body
+
+## GET /redirect-capture/:bar
+
+### Captures:
+
+- *bar*: Capture bar Int
+
+### Response:
+
+- Status code 301
+- Headers: [("Location","<redirection URI>")]
 
 - No response body
 

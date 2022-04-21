@@ -1154,6 +1154,19 @@ instance (ToAuthInfo (BasicAuth realm usr), HasDocs api) => HasDocs (BasicAuth r
 instance HasDocs (ToServantApi api) => HasDocs (NamedRoutes api) where
   docsFor Proxy = docsFor (Proxy :: Proxy (ToServantApi api))
 
+instance (KnownNat status, ReflectMethod method)
+  => HasDocs (RedirectOf' leniency status method api) where
+
+  docsFor Proxy (endpoint, action) _ =
+      single endpoint' action'
+    where
+      endpoint' = endpoint & method .~ method'
+      action' = action & response.respStatus .~ fromInteger (natVal (Proxy :: Proxy status))
+                       & response.respTypes .~ []
+                       & response.respBody .~ []
+                       & response.respHeaders .~ [("Location", "<redirection URI>")]
+      method' = reflectMethod (Proxy :: Proxy method)
+
 -- ToSample instances for simple types
 instance ToSample NoContent
 instance ToSample Bool

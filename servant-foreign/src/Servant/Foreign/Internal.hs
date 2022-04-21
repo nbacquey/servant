@@ -508,6 +508,20 @@ instance HasForeign lang ftype api
   foreignFor lang ftype Proxy req =
     foreignFor lang ftype (Proxy :: Proxy api) req
 
+-- | Copied from NoContentVerb
+instance (HasForeignType lang ftype NoContent, ReflectMethod method)
+  => HasForeign lang ftype (RedirectOf' leniency status method api) where
+  type Foreign ftype (RedirectOf' _ _ _ _) = Req ftype
+
+  foreignFor lang _ _ req =
+    req & reqFuncName . _FunctionName %~ (methodLC :)
+        & reqMethod .~ method
+        & reqReturnType .~ Just retType
+    where
+      retType  = typeFor lang (Proxy :: Proxy ftype) (Proxy :: Proxy NoContent)
+      method   = reflectMethod (Proxy :: Proxy method)
+      methodLC = toLower $ decodeUtf8 method
+
 -- | Utility class used by 'listFromAPI' which computes
 --   the data needed to generate a function for each endpoint
 --   and hands it all back in a list.

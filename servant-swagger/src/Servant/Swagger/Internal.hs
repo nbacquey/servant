@@ -439,6 +439,12 @@ instance (ToSchema a, Accept ct, HasSwagger sub, KnownSymbol (FoldDescription mo
         & required  ?~ True
         & schema    .~ ParamBody ref
 
+-- | TODO: give more explicit type to Location header. More instances are needed
+instance (KnownNat status, SwaggerMethod method)
+  => HasSwagger (RedirectOf' leniency status method api) where
+  toSwagger _ = mkEndpointNoContent "/"
+      (Proxy :: Proxy (Verb method status '[] (Headers '[Header "Location" String] NoContent)))
+
 -- =======================================================================
 -- Below are the definitions that should be in Servant.API.ContentTypes
 -- =======================================================================

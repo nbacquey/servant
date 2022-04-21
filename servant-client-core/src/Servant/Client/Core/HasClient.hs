@@ -71,14 +71,14 @@ import           Servant.API
                  ((:<|>) ((:<|>)), (:>), AuthProtect, BasicAuth, BasicAuthData,
                  BuildHeadersTo (..), Capture', CaptureAll, Description,
                  EmptyAPI, Fragment, FramingRender (..), FramingUnrender (..),
-                 FromSourceIO (..), Header', Headers (..), HttpVersion,
-                 IsSecure, MimeRender (mimeRender),
-                 MimeUnrender (mimeUnrender), NoContent (NoContent),
-                 NoContentVerb, QueryFlag, QueryParam', QueryParams, Raw,
-                 ReflectMethod (..), RemoteHost, ReqBody', SBoolI, Stream,
-                 StreamBody', Summary, ToHttpApiData, ToSourceIO (..), Vault,
-                 Verb, WithNamedContext, WithStatus (..), contentType, getHeadersHList,
-                 getResponse, toEncodedUrlPiece, toUrlPiece, NamedRoutes)
+                 FromSourceIO (..), Header, Header', Headers (..), HttpVersion,
+                 IsSecure, MimeRender (mimeRender), MimeUnrender (mimeUnrender),
+                 NamedRoutes, NoContent (NoContent), NoContentVerb, QueryFlag,
+                 QueryParam', QueryParams, Raw, RedirectOf', ReflectMethod (..),
+                 RemoteHost, ReqBody', SBoolI, Stream, StreamBody', Summary,
+                 ToHttpApiData, ToSourceIO (..), URI, Vault, Verb, WithNamedContext,
+                 WithStatus (..), contentType, getHeadersHList, getResponse,
+                 toEncodedUrlPiece, toUrlPiece)
 import           Servant.API.Generic
                  (GenericMode(..), ToServant, ToServantApi
                  , GenericServant, toServant, fromServant)
@@ -864,6 +864,24 @@ instance
         fromServant @api @(AsClientT mb) $
         hoistClientMonad @m @(ToServantApi api) @ma @mb Proxy Proxy nat $
         toServant @api @(AsClientT ma) clientA
+
+-- | TODO: decode header into URI, or Link? Additional instances are needed
+instance
+  ( RunClient m, ReflectMethod method, KnownNat status
+  ) => HasClient m (RedirectOf' leniency status method api) where
+  type Client m (RedirectOf' _ _ _ _)
+    = m (Headers '[Header "Location" String] NoContent)
+
+  clientWithRoute _pm Proxy req = do
+    response <- runRequestAcceptStatus (Just [status]) req { requestMethod = method }
+    return Headers
+      { getResponse = NoContent
+      , getHeadersHList = buildHeadersTo . toList $ responseHeaders response
+      }
+      where method = reflectMethod (Proxy :: Proxy method)
+            status = statusFromNat (Proxy :: Proxy status)
+
+  hoistClientMonad _ _ f ma = f ma
 
 infixl 1 //
 infixl 2 /:

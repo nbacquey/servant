@@ -54,6 +54,13 @@ data RedirectOf' (leniency :: RedirectLeniency) (status :: Nat) (method :: StdMe
 -- | Type alias using RedirectStrict by default
 type RedirectOf = RedirectOf' 'RedirectStrict
 
+-- | Defined here to avoid cyclic imports with Servant.Links
+-- TODO: refactor Servant.Links into Servant.Links[.Types],
+-- import Servant.Links.Types, move instance to Servant.Links
+instance HasLink (RedirectOf' leniency status method api) where
+  type MkLink (RedirectOf' _ _ _ _) r = r
+  toLink toA _ = toA
+
 -- | Helper to get rid of the @Proxy endpoint@ boilerplate
 redirectOf :: forall endpoint leniency status method api.
   ( IsElem endpoint api
