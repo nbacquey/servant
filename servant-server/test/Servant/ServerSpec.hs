@@ -53,8 +53,9 @@ import           Servant.API
                  Headers, HttpVersion, IsSecure (..), JSON, Lenient,
                  NoContent (..), NoContentVerb, NoFraming, OctetStream, Patch,
                  PlainText, Post, Put, QueryFlag, QueryParam, QueryParams, Raw,
-                 RemoteHost, ReqBody, SourceIO, StdMethod (..), Stream, Strict,
-                 UVerb, Union, Verb, WithStatus (..), addHeader)
+                 RedirectLeniency (..), RedirectOf, RedirectOf', RemoteHost, ReqBody,
+                 SourceIO, StdMethod (..), Stream, Strict, UVerb, Union, Verb,
+                 WithStatus (..), addHeader, redirectOf)
 import           Servant.Server
                  (Context ((:.), EmptyContext), Handler, Server, Tagged (..),
                  emptyServer, err401, err403, err404, respond, serve,
@@ -103,6 +104,7 @@ spec = do
   miscCombinatorSpec
   basicAuthSpec
   genAuthSpec
+  redirectionSpec
 
 ------------------------------------------------------------------------------
 -- * verbSpec {{{
@@ -908,6 +910,102 @@ uverbSpec = describe "Servant.API.UVerb " $ do
       it "should return the expected response" $ do
         response <- theRequest
         liftIO $ decode' (simpleBody response) `shouldBe` Just mouse
+
+-- }}}
+------------------------------------------------------------------------------
+-- * redirectSpec {{{
+------------------------------------------------------------------------------
+
+type NewCaptureApi = "new-api" :> Capture "foo" Int :>
+  (    Get  '[JSON] Animal
+  :<|> Post '[JSON] Animal
+  :<|> "strange" :> Get '[JSON] Animal
+  )
+
+type TempCaptureApi = "temp-api" :> Capture "foo" Int :> Delete '[JSON] Animal
+
+type OldCaptureApi = "old-api" :> Capture "bar" Int :>
+  (    RedirectOf 301 'GET    NewCaptureApi
+  :<|> RedirectOf 301 'POST   NewCaptureApi
+  :<|> RedirectOf 307 'DELETE TempCaptureApi
+  :<|> RedirectOf 303 'PATCH  NewCaptureApi
+  :<|> "sub-api" :> RedirectOf' 'RedirectLenient 301 'POST NewCaptureApi
+  )
+
+type RedirectGetEndpoint = "new-api" :> Capture "baz" Int :> Get '[JSON] Animal
+
+type RedirectGetEndpointStrange = "new-api" :> Capture "baz" Int :> "strange" :> Get '[JSON] Animal
+
+type RedirectPostEndpoint = "new-api" :> Capture "baz" Int :> Post '[JSON] Animal
+
+type RedirectDeleteEndpoint = "temp-api" :> Capture "baz" Int :> Delete '[JSON] Animal
+
+type RedirectionApi = NewCaptureApi :<|> TempCaptureApi :<|> OldCaptureApi
+
+redirectionApi :: Proxy RedirectionApi
+redirectionApi = Proxy
+
+redirectionServer :: Server RedirectionApi
+redirectionServer =
+  const (
+         return jerry
+    :<|> return jerry
+    :<|> return chimera
+    )
+  :<|> const (return jerry)
+  :<|> ( \legs ->
+          return (
+            if legs > 1
+              then redirectOf @RedirectGetEndpoint         (\mkLink -> mkLink legs)
+              else redirectOf @RedirectGetEndpointStrange  (\mkLink -> mkLink legs)
+          )
+    :<|>  return (redirectOf @RedirectPostEndpoint   (\mkLink -> mkLink legs))
+    :<|>  return (redirectOf @RedirectDeleteEndpoint (\mkLink -> mkLink $ legs + 1000))
+    :<|>  return (redirectOf @RedirectGetEndpoint    (\mkLink -> mkLink legs))
+    :<|>  return (redirectOf @RedirectPostEndpoint   (\mkLink -> mkLink legs))
+    )
+
+redirectionSpec :: Spec
+redirectionSpec = do
+  describe "Servant.API.RedirectOf" $ do
+    with (return $ serve redirectionApi redirectionServer) $ do
+
+      context "RedirectOf combinator" $ do
+        it "returns the correct header and status" $ do
+          THW.request methodGet "/old-api/4" [] ""
+            `shouldRespondWith` ""{ matchHeaders = ["Location" <:> "new-api/4"]
+                                  , matchStatus  = 301
+                                  }
+        it "plays nice with routing fallback" $ do
+          THW.request methodPost "/old-api/4" [] ""
+            `shouldRespondWith` ""{ matchHeaders = ["Location" <:> "new-api/4"]
+                                  , matchStatus  = 301
+                                  }
+        it "can manipulate captured values" $ do
+          THW.request methodDelete "/old-api/4" [] ""
+            `shouldRespondWith` ""{ matchHeaders = ["Location" <:> "temp-api/1004"]
+                                  , matchStatus  = 307
+                                  }
+        it "returns 405 when calling forbidden method" $ do
+          THW.request methodPut "/old-api/4" [] "" `shouldRespondWith` 405
+        it "can redirect any verb to GET on 303 redirections" $ do
+          THW.request methodPatch "/old-api/4" [] ""
+            `shouldRespondWith` ""{ matchHeaders = ["Location" <:> "new-api/4"]
+                                  , matchStatus  = 303
+                                  }
+        it "can inspect parameters to return different endpoints" $ do
+          THW.request methodGet "/old-api/0" [] ""
+            `shouldRespondWith` ""{ matchHeaders = ["Location" <:> "new-api/0/strange"]
+                                  , matchStatus  = 301
+                                  }
+      -- Actually, the fact that the code compiles is proof enough,
+      -- but let's explicit it here.
+      context "RedirectOf' 'RedirectLenient combinator" $ do
+        it "serves various verbs if the target api also serves GET" $ do
+          THW.request methodGet "/old-api/4/sub-api" [] ""
+            `shouldRespondWith` ""{ matchHeaders = ["Location" <:> "new-api/4"]
+                                  , matchStatus  = 301
+                                  }
 
 -- }}}
 ------------------------------------------------------------------------------
